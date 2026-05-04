@@ -90,7 +90,8 @@ CREATE TABLE IF NOT EXISTS emails (
     {
       "profile": "mail1",
       "email": "first@claw.163.com",
-      "display_name": "邮箱一"
+      "display_name": "邮箱一",
+      "api_key": "ck_live_xxxxxxxxxxxxxxxx"
     }
   ],
   "db_path": "./data/emails.db",

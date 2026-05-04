@@ -10,6 +10,7 @@ class Account:
     profile: str
     email: str
     display_name: str
+    api_key: str = ""
 
 
 @dataclass
@@ -47,6 +48,7 @@ def load_config(path: str) -> AppConfig:
                 profile=item["profile"],
                 email=item["email"],
                 display_name=item["display_name"],
+                api_key=item.get("api_key", ""),
             ))
 
     config = AppConfig(

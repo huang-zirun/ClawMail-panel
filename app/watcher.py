@@ -10,6 +10,47 @@ from app.database import init_db, insert_email
 
 logger = logging.getLogger(__name__)
 
+_apikey_lock = threading.Lock()
+
+
+def _run_mail_cli(args: str, timeout: int = 30) -> tuple[int, str, str]:
+    cmd = f"mail-cli {args}"
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            shell=True,
+            timeout=timeout,
+        )
+        return result.returncode, result.stdout.strip(), result.stderr.strip()
+    except subprocess.TimeoutExpired:
+        return -1, "", "timeout"
+    except Exception as e:
+        return -1, "", str(e)
+
+
+def _set_apikey_and_login(account: Account) -> bool:
+    if not account.api_key:
+        logger.error("账号 %s 缺少 api_key，跳过", account.profile)
+        return False
+
+    with _apikey_lock:
+        rc, _, err = _run_mail_cli(f"auth apikey set {account.api_key}")
+        if rc != 0:
+            logger.error("写入 API Key 失败 [%s]: %s", account.profile, err)
+            return False
+        logger.info("API Key 已设置 [%s]", account.profile)
+
+        rc, _, err = _run_mail_cli(f"--profile {account.profile} auth login --user {account.email}")
+        if rc != 0:
+            logger.error("登录失败 [%s]: %s", account.profile, err)
+            return False
+        logger.info("登录成功 [%s]", account.profile)
+
+    return True
+
 
 def watch_account(account: Account, db_path: str):
     if shutil.which("mail-cli") is None:
@@ -19,13 +60,34 @@ def watch_account(account: Account, db_path: str):
     while True:
         logger.info("启动邮件监听: profile=%s, account=%s", account.profile, account.display_name)
         try:
-            process = subprocess.Popen(
-                ["mail-cli", "--profile", account.profile, "mail", "watch", "--quiet"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                encoding="utf-8",
-            )
+            if account.api_key:
+                with _apikey_lock:
+                    rc, _, err = _run_mail_cli(f"auth apikey set {account.api_key}")
+                    if rc != 0:
+                        logger.error("设置 API Key 失败 [%s]: %s", account.profile, err)
+                        time.sleep(5)
+                        continue
+
+                    process = subprocess.Popen(
+                        f"mail-cli --profile {account.profile} mail watch --quiet",
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        encoding="utf-8",
+                        shell=True,
+                    )
+
+                    time.sleep(2)
+
+            else:
+                process = subprocess.Popen(
+                    f"mail-cli --profile {account.profile} mail watch --quiet",
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    encoding="utf-8",
+                    shell=True,
+                )
 
             def _read_stderr():
                 for line in process.stderr:
@@ -73,11 +135,31 @@ def watch_account(account: Account, db_path: str):
 
 def start_watchers(config: AppConfig):
     init_db(config.db_path)
-    names = []
+
+    ready_accounts = []
     for account in config.accounts:
-        t = threading.Thread(target=watch_account, args=(account, config.db_path), daemon=True)
+        if account.api_key:
+            if _set_apikey_and_login(account):
+                ready_accounts.append(account)
+            else:
+                logger.error("账号 %s 初始化失败，跳过监听", account.profile)
+        else:
+            logger.warning("账号 %s 未配置 api_key，使用默认 mail-cli 配置", account.profile)
+            ready_accounts.append(account)
+
+    time.sleep(1)
+
+    names = []
+    for account in ready_accounts:
+        t = threading.Thread(
+            target=watch_account,
+            args=(account, config.db_path),
+            daemon=True,
+        )
         t.start()
         names.append(f"{account.display_name}({account.profile})")
+        time.sleep(3)
+
     logger.info("已启动邮件监听账号: %s", ", ".join(names))
 
 

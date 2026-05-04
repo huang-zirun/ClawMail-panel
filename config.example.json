@@ -4,12 +4,14 @@
     {
       "profile": "mail1",
       "email": "first@claw.163.com",
-      "display_name": "邮箱一"
+      "display_name": "邮箱一",
+      "api_key": "ck_live_xxxxxxxxxxxxxxxx"
     },
     {
       "profile": "mail2",
       "email": "second@claw.163.com",
-      "display_name": "邮箱二"
+      "display_name": "邮箱二",
+      "api_key": "ck_live_yyyyyyyyyyyyyyyy"
     }
   ],
   "db_path": "./data/emails.db",
