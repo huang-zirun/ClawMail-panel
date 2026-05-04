@@ -50,8 +50,11 @@
 - FastAPI 提供服务，监听 `127.0.0.1:8000`
 - Basic Auth 登录保护
 - 路由：
-  - `GET /` — 邮件列表（按 `created_at` 倒序，最近 300 封）
-  - `GET /mail/{id}` — 邮件详情（打开后标记已读）
+  - `GET /` — 邮件列表页（SPA，AJAX 加载）
+  - `GET /api/emails` — 邮件列表 JSON（按 `created_at` 倒序，最近 300 封）
+  - `GET /api/emails/{id}` — 单封邮件详情 JSON
+  - `POST /api/emails/{id}/read` — 标记已读
+  - `GET /mail/{id}` — 邮件详情页（兼容旧书签，打开后标记已读）
 
 ## 数据库设计
 
@@ -117,6 +120,7 @@ claw-mail-panel/
     watcher.py
     models.py
     security.py
+    captcha.py
 
     templates/
       index.html
@@ -139,7 +143,7 @@ claw-mail-panel/
 3. **INSERT OR IGNORE 去重** — 利用 UNIQUE 约束，简洁可靠
 4. **iframe sandbox 渲染 HTML 邮件** — 防止 XSS，安全隔离
 5. **Basic Auth** — 本地场景够用，无需复杂认证体系
-6. **服务端渲染（Jinja2）** — 第一版不需要前端框架，简单直接
+6. **列表页改为 SPA 交互** — 右侧滑出详情面板，AJAX 加载，实时刷新已读状态，提升体验
 
 ## 第一版必须实现
 
@@ -147,7 +151,8 @@ claw-mail-panel/
 - 多账号配置与监听
 - 邮件入库与去重
 - 邮件列表页 / 详情页
-- 已读 / 未读状态
+- 已读 / 未读状态（点击后实时刷新，无需手动 F5）
+- 验证码自动提取与一键复制
 - Basic Auth
 - Windows 本地运行说明
 - README

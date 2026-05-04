@@ -9,6 +9,7 @@ import secrets
 
 from app.config import load_config, AppConfig
 from app.database import get_emails, get_email_by_id, mark_as_read, init_db
+from app.captcha import extract_captcha
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -43,10 +44,41 @@ def auth(credentials: HTTPBasicCredentials = Depends(security)):
     return credentials
 
 
+def _enrich_captcha(email: dict) -> dict:
+    for field in ("subject", "text_body", "html_body"):
+        val = email.get(field)
+        if val:
+            captcha = extract_captcha(val)
+            if captcha:
+                email["captcha"] = captcha
+                return email
+    email["captcha"] = None
+    return email
+
+
 @app.get("/")
 async def index(request: Request, _=Depends(auth)):
+    return templates.TemplateResponse(request, "index.html", {})
+
+
+@app.get("/api/emails")
+async def api_emails(_=Depends(auth)):
     emails = get_emails(app.state.config.db_path)
-    return templates.TemplateResponse(request, "index.html", {"emails": emails})
+    return [_enrich_captcha(e) for e in emails]
+
+
+@app.get("/api/emails/{email_id}")
+async def api_email_detail(email_id: int, _=Depends(auth)):
+    email = get_email_by_id(app.state.config.db_path, email_id)
+    if not email:
+        raise HTTPException(status_code=404, detail="邮件不存在")
+    return _enrich_captcha(email)
+
+
+@app.post("/api/emails/{email_id}/read")
+async def api_email_read(email_id: int, _=Depends(auth)):
+    mark_as_read(app.state.config.db_path, email_id)
+    return {"ok": True}
 
 
 @app.get("/mail/{email_id}")

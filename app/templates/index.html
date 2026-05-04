@@ -9,32 +9,192 @@
 <body>
     <div class="container">
         <h1>ClawMail 收件箱</h1>
-        {% if emails %}
-        <table>
-            <thead>
-                <tr>
-                    <th>账号</th>
-                    <th>时间</th>
-                    <th>发件人</th>
-                    <th>主题</th>
-                    <th>状态</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for email in emails %}
-                <tr class="{% if not email.is_read %}unread{% endif %}" onclick="location.href='/mail/{{ email.id }}'">
-                    <td>{{ email.account_name or '' }}</td>
-                    <td>{{ email.date_text or '' }}</td>
-                    <td>{{ email.sender or '' }}</td>
-                    <td>{{ email.subject or '' }}</td>
-                    <td class="{% if not email.is_read %}status-unread{% else %}status-read{% endif %}">{% if not email.is_read %}未读{% else %}已读{% endif %}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        {% else %}
-        <p class="empty">暂无邮件</p>
-        {% endif %}
+        <div id="email-table-wrapper">
+            <p class="empty">加载中...</p>
+        </div>
     </div>
+
+    <div id="detail-panel" class="detail-panel">
+        <div class="detail-header">
+            <button id="close-detail" class="close-btn">&times;</button>
+            <h2>邮件详情</h2>
+        </div>
+        <div id="detail-captcha" class="detail-captcha" style="display:none;">
+            <span class="captcha-badge"></span>
+            <button class="copy-btn" id="copy-detail-captcha">复制</button>
+        </div>
+        <div id="detail-content" class="detail-content"></div>
+    </div>
+
+    <script>
+    (function() {
+        function renderTable(emails) {
+            var wrapper = document.getElementById('email-table-wrapper');
+            if (!emails || emails.length === 0) {
+                wrapper.innerHTML = '<p class="empty">暂无邮件</p>';
+                return;
+            }
+            var html = '<table><thead><tr><th>账号</th><th>时间</th><th>发件人</th><th>主题</th><th>状态</th><th>操作</th></tr></thead><tbody>';
+            emails.forEach(function(email) {
+                var unreadClass = email.is_read ? '' : 'unread';
+                var statusClass = email.is_read ? 'status-read' : 'status-unread';
+                var statusText = email.is_read ? '已读' : '未读';
+                var captchaHtml = '';
+                if (email.captcha) {
+                    captchaHtml = '<span class="captcha-badge">' + escapeHtml(email.captcha) + '</span> <button class="copy-btn" data-captcha="' + escapeHtml(email.captcha) + '">复制</button>';
+                }
+                html += '<tr class="' + unreadClass + '" data-id="' + email.id + '">' +
+                    '<td>' + escapeHtml(email.account_name || '') + '</td>' +
+                    '<td>' + escapeHtml(email.date_text || '') + '</td>' +
+                    '<td>' + escapeHtml(email.sender || '') + '</td>' +
+                    '<td>' + escapeHtml(email.subject || '') + ' ' + captchaHtml + '</td>' +
+                    '<td class="' + statusClass + '">' + statusText + '</td>' +
+                    '<td><button class="open-detail-btn">查看</button></td>' +
+                    '</tr>';
+            });
+            html += '</tbody></table>';
+            wrapper.innerHTML = html;
+
+            wrapper.querySelectorAll('.copy-btn').forEach(function(btn) {
+                btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    var code = btn.getAttribute('data-captcha');
+                    if (code) copyToClipboard(code);
+                });
+            });
+
+            wrapper.querySelectorAll('tr').forEach(function(row) {
+                row.addEventListener('click', function(e) {
+                    if (e.target.classList.contains('copy-btn')) return;
+                    var id = parseInt(row.getAttribute('data-id'));
+                    openDetail(id, row);
+                });
+            });
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        function copyToClipboard(text) {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(function() {
+                    alert('已复制: ' + text);
+                }).catch(function() {
+                    fallbackCopy(text);
+                });
+            } else {
+                fallbackCopy(text);
+            }
+        }
+
+        function fallbackCopy(text) {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            alert('已复制: ' + text);
+        }
+
+        function openDetail(id, row) {
+            fetch('/api/emails/' + id)
+                .then(function(r) { return r.json(); })
+                .then(function(email) {
+                    showDetail(email);
+                    if (!email.is_read) {
+                        fetch('/api/emails/' + id + '/read', {method: 'POST'})
+                            .then(function() {
+                                if (row) {
+                                    row.classList.remove('unread');
+                                    var statusTd = row.querySelector('td:nth-child(5)');
+                                    if (statusTd) {
+                                        statusTd.textContent = '已读';
+                                        statusTd.classList.remove('status-unread');
+                                        statusTd.classList.add('status-read');
+                                    }
+                                }
+                            });
+                    }
+                });
+        }
+
+        function showDetail(email) {
+            var panel = document.getElementById('detail-panel');
+            var content = document.getElementById('detail-content');
+            var captchaDiv = document.getElementById('detail-captcha');
+            var captchaBadge = captchaDiv.querySelector('.captcha-badge');
+            var copyBtn = document.getElementById('copy-detail-captcha');
+
+            if (email.captcha) {
+                captchaBadge.textContent = email.captcha;
+                captchaDiv.style.display = '';
+                copyBtn.onclick = function() { copyToClipboard(email.captcha); };
+            } else {
+                captchaDiv.style.display = 'none';
+            }
+
+            var html = '<div class="email-info">' +
+                '<div><span class="label">账号：</span>' + escapeHtml(email.account_name || '') + '</div>' +
+                '<div><span class="label">发件人：</span>' + escapeHtml(email.sender || '') + '</div>' +
+                '<div><span class="label">收件人：</span>' + escapeHtml(email.recipients || '') + '</div>';
+            if (email.cc) {
+                html += '<div><span class="label">抄送：</span>' + escapeHtml(email.cc) + '</div>';
+            }
+            html += '<div><span class="label">主题：</span>' + escapeHtml(email.subject || '') + '</div>' +
+                '<div><span class="label">时间：</span>' + escapeHtml(email.date_text || '') + '</div>' +
+                '</div>';
+
+            if (email.html_body) {
+                html += '<div class="email-body"><iframe sandbox srcdoc="' + escapeHtml(email.html_body) + '"></iframe></div>';
+            } else if (email.text_body) {
+                html += '<div class="email-body"><pre>' + escapeHtml(email.text_body) + '</pre></div>';
+            } else {
+                html += '<div class="email-body"><p>无正文内容</p></div>';
+            }
+
+            if (email.attachments_json && email.attachments_json !== '[]' && email.attachments_json !== '') {
+                html += '<div class="email-attachments"><h2>附件</h2><ul id="detail-attachment-list"></ul></div>';
+            }
+
+            content.innerHTML = html;
+
+            if (email.attachments_json && email.attachments_json !== '[]' && email.attachments_json !== '') {
+                try {
+                    var attachments = JSON.parse(email.attachments_json);
+                    var list = document.getElementById('detail-attachment-list');
+                    if (list) {
+                        attachments.forEach(function(att) {
+                            var li = document.createElement('li');
+                            li.textContent = att.filename || att.name || '未知附件';
+                            list.appendChild(li);
+                        });
+                    }
+                } catch (e) {}
+            }
+
+            panel.classList.add('open');
+        }
+
+        document.getElementById('close-detail').addEventListener('click', function() {
+            document.getElementById('detail-panel').classList.remove('open');
+        });
+
+        function loadEmails() {
+            fetch('/api/emails')
+                .then(function(r) { return r.json(); })
+                .then(function(emails) {
+                    renderTable(emails);
+                })
+                .catch(function() {
+                    document.getElementById('email-table-wrapper').innerHTML = '<p class="empty">加载失败</p>';
+                });
+        }
+
+        loadEmails();
+    })();
+    </script>
 </body>
 </html>
