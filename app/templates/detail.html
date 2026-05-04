@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ email.subject }} - ClawMail</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <a href="/" class="back">&larr; 返回</a>
+            <h1>ClawMail</h1>
+        </header>
+        <main>
+            <section class="email-info">
+                <div><span class="label">账号：</span>{{ email.account_name or '' }}</div>
+                <div><span class="label">发件人：</span>{{ email.sender or '' }}</div>
+                <div><span class="label">收件人：</span>{{ email.recipients or '' }}</div>
+                {% if email.cc %}
+                <div><span class="label">抄送：</span>{{ email.cc }}</div>
+                {% endif %}
+                <div><span class="label">主题：</span>{{ email.subject or '' }}</div>
+                <div><span class="label">时间：</span>{{ email.date_text or '' }}</div>
+            </section>
+            <section class="email-body">
+                {% if email.html_body %}
+                <iframe sandbox srcdoc="{{ email.html_body | e }}"></iframe>
+                {% elif email.text_body %}
+                <pre>{{ email.text_body }}</pre>
+                {% else %}
+                <p>无正文内容</p>
+                {% endif %}
+            </section>
+            {% if email.attachments_json and email.attachments_json != '[]' and email.attachments_json != '' %}
+            <section class="email-attachments">
+                <h2>附件</h2>
+                <ul id="attachment-list"></ul>
+                <script>
+                    var attachments = JSON.parse("{{ email.attachments_json | e }}");
+                    var list = document.getElementById('attachment-list');
+                    attachments.forEach(function(att) {
+                        var li = document.createElement('li');
+                        li.textContent = att.filename || att.name || '未知附件';
+                        list.appendChild(li);
+                    });
+                </script>
+            </section>
+            {% endif %}
+        </main>
+    </div>
+</body>
+</html>
